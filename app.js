@@ -396,12 +396,18 @@ async function refreshAll() {
       const classicPatPolicyError = failed.some((error) =>
         /forbids access via a personal access tokens \(classic\)/i.test(error?.message || "")
       );
+      const hostedTokenRepoAccessError =
+        !usesLocalProxy() &&
+        Boolean(state.githubToken) &&
+        failed.some((error) => Number(error?.status) === 404);
       const authGuidance = needsAuth
         ? usesLocalProxy()
           ? " Sign in with GitHub using the Sign In With GitHub button, then refresh."
           : classicPatPolicyError
             ? " This org blocks long-lived classic PATs. Use a fine-grained token, or create a classic PAT with an expiration of 8 days or less, then update the token in Filters."
-            : " This repository may be private. Add a GitHub token in Filters or check the repository name."
+            : hostedTokenRepoAccessError
+              ? " Token sign-in worked, but this token cannot read the repo. For fine-grained PAT: add this repository and grant Pull requests: Read + Metadata: Read. For classic PAT: authorize the token for org SSO, then refresh."
+              : " This repository may be private. Add a GitHub token in Filters or check the repository name."
         : "";
       setStatus(
         `Loaded ${state.pulls.length} PRs with ${failed.length} repo error(s): ${details}${authGuidance}`,
