@@ -173,9 +173,34 @@ function onDateWindowChanged() {
   applyFilters();
 }
 
+function usesLocalProxy() {
+  return ["localhost", "127.0.0.1"].includes(window.location.hostname);
+}
+
+function getPullsEndpoint(repo) {
+  if (usesLocalProxy()) {
+    return `/api/pulls?repo=${encodeURIComponent(repo)}`;
+  }
+
+  return `https://api.github.com/repos/${repo}/pulls?state=all&per_page=100&sort=updated&direction=desc`;
+}
+
+function getViewerEndpoint() {
+  return usesLocalProxy() ? "/api/me" : null;
+}
+
 async function detectViewer(silent) {
   try {
-    const response = await fetch("/api/me");
+    const endpoint = getViewerEndpoint();
+
+    if (!endpoint) {
+      if (!silent && !state.viewerLogin) {
+        setViewerStatus("Enter your GitHub username to enable My View on the hosted dashboard.", "error");
+      }
+      return;
+    }
+
+    const response = await fetch(endpoint);
     if (!response.ok) {
       if (!silent) {
         setViewerStatus(
@@ -311,7 +336,15 @@ async function refreshAll() {
 }
 
 async function fetchRepoPulls(repo) {
-  const response = await fetch(`/api/pulls?repo=${encodeURIComponent(repo)}`);
+  const endpoint = getPullsEndpoint(repo);
+  const response = await fetch(endpoint, {
+    headers: usesLocalProxy()
+      ? {}
+      : {
+          Accept: "application/vnd.github+json",
+          "X-GitHub-Api-Version": "2022-11-28"
+        }
+  });
 
   if (!response.ok) {
     let payload = null;
