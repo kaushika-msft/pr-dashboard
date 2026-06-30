@@ -101,6 +101,13 @@ function init() {
   elements.dateRange.value = String(state.dateWindowDays);
   elements.dateRangeValue.textContent = formatDateWindowLabel(state.dateWindowDays);
   elements.updateAuthor.value = state.viewerLogin || "";
+  if (!usesLocalProxy()) {
+    elements.detectViewerBtn.textContent = "Manual Username Only";
+    elements.detectViewerBtn.disabled = true;
+    if (!state.viewerLogin) {
+      setViewerStatus("Enter your GitHub username to personalize My View.", "");
+    }
+  }
   bindEvents();
   renderRepos();
   renderTeamUpdates();
@@ -195,7 +202,7 @@ async function detectViewer(silent) {
 
     if (!endpoint) {
       if (!silent && !state.viewerLogin) {
-        setViewerStatus("Enter your GitHub username to enable My View on the hosted dashboard.", "error");
+        setViewerStatus("Enter your GitHub username to personalize My View.", "");
       }
       return;
     }
