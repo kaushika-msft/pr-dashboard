@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>PR Command Center</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div class="bg-grid"></div>
+    <div class="bg-orb orb-a"></div>
+    <div class="bg-orb orb-b"></div>
+
+    <main class="page">
+      <header class="hero hero-split">
+        <div>
+          <p class="eyebrow">CE&S Knowledge Experience Ops</p>
+          <h1>Pull Request Command Center</h1>
+          <p class="subtitle">
+            A friendly task board for tracking GitHub PRs, posting team updates, assigning owners,
+            and moving work through a polished analytics dashboard.
+          </p>
+        </div>
+
+        <div class="hero-stats">
+          <article class="hero-stat">
+            <p>Tracked repos</p>
+            <strong id="repo-count">0</strong>
+          </article>
+          <article class="hero-stat">
+            <p>Visible PRs</p>
+            <strong id="hero-pr-count">0</strong>
+          </article>
+        </div>
+      </header>
+
+      <section class="panel settings-panel">
+        <h2>Portfolio Setup</h2>
+        <div class="settings-grid">
+          <form id="repo-form" class="inline-form">
+            <label for="repo-input">Repository (owner/repo)</label>
+            <div class="input-row">
+              <input id="repo-input" name="repo" placeholder="example: microsoft/vscode" required />
+              <button type="submit">Add Repo</button>
+            </div>
+          </form>
+        </div>
+
+        <div class="repo-list-wrap">
+          <p class="small-title">Tracked Repositories</p>
+          <ul id="repo-list" class="repo-list"></ul>
+        </div>
+      </section>
+
+      <section class="panel filters-panel">
+        <h2>Filters</h2>
+        <p id="refresh-status" class="status-line"></p>
+        <div class="viewer-row">
+          <label class="viewer-field" for="viewer-input">
+            My GitHub User
+            <input id="viewer-input" placeholder="example: kaushika-msft" />
+          </label>
+
+          <button id="detect-viewer-btn" type="button">Detect From GitHub</button>
+
+          <label class="viewer-field" for="view-filter">
+            My View
+            <select id="view-filter">
+              <option value="all">All PRs</option>
+              <option value="authored">PR Authored By Me</option>
+              <option value="assigned">PR Assigned To Me</option>
+              <option value="review">PR Waiting For My Review</option>
+            </select>
+          </label>
+        </div>
+        <p id="viewer-status" class="status-line viewer-status"></p>
+        <div class="filter-grid">
+          <label>
+            PR State
+            <select id="status-filter">
+              <option value="all">All</option>
+              <option value="draft">Draft</option>
+              <option value="open">Open</option>
+              <option value="merged">Merged</option>
+              <option value="closed">Closed</option>
+            </select>
+          </label>
+
+          <label>
+            Label
+            <select id="label-filter">
+              <option value="all">All Labels</option>
+            </select>
+          </label>
+
+          <label>
+            Search
+            <input id="search-filter" placeholder="title, author, repo" />
+          </label>
+
+          <label class="date-filter">
+            Activity window
+            <input id="date-range" type="range" min="1" max="365" step="1" value="1" />
+            <span id="date-range-value" class="date-range-value">1d</span>
+          </label>
+
+          <button id="refresh-btn" class="refresh-btn">Refresh Data</button>
+        </div>
+      </section>
+
+      <section class="dashboard-grid">
+        <section class="panel kpi-panel analytics-panel">
+          <div class="section-head">
+            <div>
+              <p class="small-title">At a glance</p>
+              <h2>Dashboard overview</h2>
+            </div>
+            <p id="result-count" class="section-note"></p>
+          </div>
+          <div class="kpi-grid" id="kpi-grid"></div>
+          <div id="signal-grid" class="signal-grid"></div>
+          <div class="label-focus-head">
+            <div>
+              <p class="small-title">Tracked labels</p>
+              <h3>Repository-specific signals</h3>
+            </div>
+            <p class="section-note">Counts update with the current filters.</p>
+          </div>
+          <div id="label-focus-grid" class="label-focus-grid"></div>
+          <div class="chart-shell">
+            <div class="chart-head">
+              <h3>Status mix</h3>
+              <p>Based on current filters and local board status.</p>
+            </div>
+            <div id="status-chart" class="status-chart"></div>
+          </div>
+        </section>
+
+        <section class="panel updates-panel">
+          <div class="section-head">
+            <div>
+              <p class="small-title">Team pulse</p>
+              <h2>Status updates</h2>
+            </div>
+          </div>
+          <form id="update-form" class="update-form">
+            <label>
+              Name
+              <input id="update-author" placeholder="Your name" />
+            </label>
+            <label>
+              Status
+              <select id="update-status">
+                <option value="on-track">On Track</option>
+                <option value="blocked">Blocked</option>
+                <option value="attention">Needs Attention</option>
+                <option value="done">Done</option>
+              </select>
+            </label>
+            <label class="update-message-field">
+              Update
+              <textarea id="update-input" rows="3" placeholder="Share progress, blockers, or a heads-up..."></textarea>
+            </label>
+            <button type="submit">Post Update</button>
+          </form>
+          <div id="update-list" class="update-list"></div>
+        </section>
+      </section>
+
+      <section class="panel table-panel">
+        <div class="section-head">
+          <div>
+            <p class="small-title">Board</p>
+            <h2>Pull requests by state</h2>
+          </div>
+        </div>
+        <div id="board-columns" class="board-columns"></div>
+      </section>
+    </main>
+
+    <template id="pr-card-template">
+      <article class="pr-card" draggable="true">
+        <div class="card-top">
+          <div class="card-heading">
+            <p class="repo-pill"></p>
+            <h3 class="pr-title"></h3>
+            <p class="meta"></p>
+          </div>
+          <span class="status-pill"></span>
+        </div>
+        <div class="labels chip-row"></div>
+        <div class="card-row assignment-row">
+          <label class="field assignee-field">
+            Assignee
+            <input class="assignee-input" list="assignee-suggestions" placeholder="Add teammate" />
+          </label>
+          <button type="button" class="assign-btn">Assign</button>
+          <p class="assignment-chip"></p>
+        </div>
+        <div class="card-row">
+          <label class="field status-field">
+            GitHub PR status
+            <select class="status-select" disabled>
+              <option value="draft">Draft</option>
+              <option value="open">Open</option>
+              <option value="merged">Merged</option>
+              <option value="closed">Closed</option>
+            </select>
+          </label>
+        </div>
+        <section class="comment-panel">
+          <div class="comment-head">
+            <span>Comments</span>
+            <span class="comment-count"></span>
+          </div>
+          <div class="comment-list"></div>
+          <form class="comment-form">
+            <input class="comment-author" placeholder="Your name" />
+            <textarea class="comment-input" rows="2" placeholder="Add a note, blocker, or next step..."></textarea>
+            <button type="submit">Add Comment</button>
+          </form>
+        </section>
+        <div class="actions"></div>
+      </article>
+    </template>
+
+    <datalist id="assignee-suggestions"></datalist>
+
+    <script src="app.js"></script>
+  </body>
+</html>
