@@ -211,7 +211,7 @@ async function onTestTokenAccess() {
   }
 
   setStatus(
-    `Token access check failed: ${failures.slice(0, 2).join(" | ")} Ensure repo is granted in fine-grained PAT and org SSO is authorized if required.",
+    `Token access check failed: ${failures.slice(0, 2).join(" | ")} Ensure repo is granted in fine-grained PAT and org SSO is authorized if required.`,
     "error"
   );
 }
