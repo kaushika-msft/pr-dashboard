@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>PR Command Center</title>
-    <link rel="stylesheet" href="styles.css?v=20260630-1" />
+    <link rel="stylesheet" href="styles.css?v=20260630-2" />
   </head>
   <body>
     <div class="bg-grid"></div>
@@ -59,6 +59,11 @@
           <label class="viewer-field" for="viewer-input">
             My GitHub User
             <input id="viewer-input" placeholder="example: kaushika-msft" />
+          </label>
+
+          <label class="viewer-field" for="token-input">
+            GitHub Token (optional)
+            <input id="token-input" type="password" placeholder="github_pat_..." autocomplete="off" />
           </label>
 
           <button id="detect-viewer-btn" type="button">Detect From GitHub</button>
@@ -226,6 +231,6 @@
 
     <datalist id="assignee-suggestions"></datalist>
 
-    <script src="app.js?v=20260630-1"></script>
+    <script src="app.js?v=20260630-2"></script>
   </body>
 </html>

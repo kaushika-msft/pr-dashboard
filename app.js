@@ -1,6 +1,7 @@
 const STORAGE_KEYS = {
   repos: "pr-dashboard.repos",
   viewerLogin: "pr-dashboard.viewer-login",
+  githubToken: "pr-dashboard.github-token",
   boardState: "pr-dashboard.board-state",
   teamUpdates: "pr-dashboard.team-updates",
   dateWindowDays: "pr-dashboard.date-window-days",
@@ -52,6 +53,7 @@ const GITHUB_STATE_LOOKUP = Object.fromEntries(GITHUB_STATE_DEFS.map((status) =>
 const state = {
   repos: loadJson(STORAGE_KEYS.repos, [DEFAULT_REPO]),
   viewerLogin: localStorage.getItem(STORAGE_KEYS.viewerLogin) || "",
+  githubToken: localStorage.getItem(STORAGE_KEYS.githubToken) || "",
   dateWindowDays: clampDateWindow(Number(localStorage.getItem(STORAGE_KEYS.dateWindowDays) || 1)),
   boardState: loadJson(STORAGE_KEYS.boardState, {}),
   teamUpdates: loadJson(STORAGE_KEYS.teamUpdates, []),
@@ -73,6 +75,7 @@ const elements = {
   dateRange: document.getElementById("date-range"),
   dateRangeValue: document.getElementById("date-range-value"),
   viewerInput: document.getElementById("viewer-input"),
+  tokenInput: document.getElementById("token-input"),
   viewerStatus: document.getElementById("viewer-status"),
   viewFilter: document.getElementById("view-filter"),
   detectViewerBtn: document.getElementById("detect-viewer-btn"),
@@ -98,14 +101,14 @@ init();
 function init() {
   migrateLegacyNotes();
   elements.viewerInput.value = state.viewerLogin;
+  elements.tokenInput.value = state.githubToken;
   elements.dateRange.value = String(state.dateWindowDays);
   elements.dateRangeValue.textContent = formatDateWindowLabel(state.dateWindowDays);
   elements.updateAuthor.value = state.viewerLogin || "";
   if (!usesLocalProxy()) {
-    elements.detectViewerBtn.textContent = "Manual Username Only";
-    elements.detectViewerBtn.disabled = true;
+    elements.detectViewerBtn.textContent = "Detect With Token";
     if (!state.viewerLogin) {
-      setViewerStatus("Enter your GitHub username to personalize My View.", "");
+      setViewerStatus("Enter your GitHub username, or add a token and click Detect With Token.", "");
     }
   }
   bindEvents();
@@ -121,6 +124,7 @@ function bindEvents() {
   elements.refreshBtn.addEventListener("click", refreshAll);
   elements.detectViewerBtn.addEventListener("click", () => detectViewer(false));
   elements.viewerInput.addEventListener("change", onViewerChanged);
+  elements.tokenInput.addEventListener("change", onTokenChanged);
   elements.dateRange.addEventListener("input", onDateWindowChanged);
   elements.updateForm.addEventListener("submit", onPostUpdate);
 
@@ -128,6 +132,22 @@ function bindEvents() {
     control.addEventListener("input", applyFilters);
     control.addEventListener("change", applyFilters);
   });
+}
+
+function onTokenChanged() {
+  state.githubToken = elements.tokenInput.value.trim();
+  localStorage.setItem(STORAGE_KEYS.githubToken, state.githubToken);
+
+  if (!usesLocalProxy()) {
+    if (state.githubToken) {
+      setViewerStatus("Token saved. You can use Detect With Token or enter your username manually.", "ok");
+      detectViewer(true);
+    } else if (!state.viewerLogin) {
+      setViewerStatus("Enter your GitHub username, or add a token and click Detect With Token.", "");
+    }
+  }
+
+  refreshAll();
 }
 
 function migrateLegacyNotes() {
@@ -193,7 +213,24 @@ function getPullsEndpoint(repo) {
 }
 
 function getViewerEndpoint() {
-  return usesLocalProxy() ? "/api/me" : null;
+  if (usesLocalProxy()) {
+    return "/api/me";
+  }
+
+  return state.githubToken ? "https://api.github.com/user" : null;
+}
+
+function getGitHubHeaders() {
+  const headers = {
+    Accept: "application/vnd.github+json",
+    "X-GitHub-Api-Version": "2022-11-28"
+  };
+
+  if (state.githubToken) {
+    headers.Authorization = `Bearer ${state.githubToken}`;
+  }
+
+  return headers;
 }
 
 async function detectViewer(silent) {
@@ -202,18 +239,20 @@ async function detectViewer(silent) {
 
     if (!endpoint) {
       if (!silent && !state.viewerLogin) {
-        setViewerStatus("Enter your GitHub username to personalize My View.", "");
+        setViewerStatus("Enter your GitHub username, or add a token and click Detect With Token.", "");
       }
       return;
     }
 
-    const response = await fetch(endpoint);
+    const response = await fetch(endpoint, {
+      headers: usesLocalProxy() ? {} : getGitHubHeaders()
+    });
     if (!response.ok) {
       if (!silent) {
         setViewerStatus(
           usesLocalProxy()
             ? "Could not auto-detect viewer from the local session. Enter your GitHub username manually."
-            : "Enter your GitHub username to personalize My View.",
+            : "Could not detect viewer with this token. Enter your GitHub username manually.",
           ""
         );
       }
@@ -330,7 +369,7 @@ async function refreshAll() {
       const authGuidance = needsAuth
         ? usesLocalProxy()
           ? " Sign in with GitHub CLI in terminal: gh auth login -w -s repo,read:org, then refresh."
-          : " Check the repository name, confirm it is public, and try again."
+          : " This repository may be private. Add a GitHub token in Filters or check the repository name."
         : "";
       setStatus(
         `Loaded ${state.pulls.length} PRs with ${failed.length} repo error(s): ${details}${authGuidance}`,
@@ -349,12 +388,7 @@ async function refreshAll() {
 async function fetchRepoPulls(repo) {
   const endpoint = getPullsEndpoint(repo);
   const response = await fetch(endpoint, {
-    headers: usesLocalProxy()
-      ? {}
-      : {
-          Accept: "application/vnd.github+json",
-          "X-GitHub-Api-Version": "2022-11-28"
-        }
+    headers: usesLocalProxy() ? {} : getGitHubHeaders()
   });
 
   if (!response.ok) {
