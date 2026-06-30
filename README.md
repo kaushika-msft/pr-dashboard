@@ -29,6 +29,8 @@ This project is intentionally no-build.
 
 The app is set up for GitHub Pages deployment through `.github/workflows/deploy.yml`.
 
+Live URL: https://kaushika-msft.github.io/pr-dashboard/
+
 1. Push the repo to GitHub.
 2. Enable GitHub Pages in repository settings using the GitHub Actions source.
 3. Push to `main` or run the `Deploy PR Command Center` workflow manually.
