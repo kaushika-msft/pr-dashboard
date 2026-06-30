@@ -366,10 +366,15 @@ async function refreshAll() {
         .map((error) => error.message)
         .join(" | ");
       const needsAuth = failed.some((error) => shouldPromptForCredentials(error));
+      const classicPatPolicyError = failed.some((error) =>
+        /forbids access via a personal access tokens \(classic\)/i.test(error?.message || "")
+      );
       const authGuidance = needsAuth
         ? usesLocalProxy()
           ? " Sign in with GitHub CLI in terminal: gh auth login -w -s repo,read:org, then refresh."
-          : " This repository may be private. Add a GitHub token in Filters or check the repository name."
+          : classicPatPolicyError
+            ? " This org blocks long-lived classic PATs. Use a fine-grained token, or create a classic PAT with an expiration of 8 days or less, then update the token in Filters."
+            : " This repository may be private. Add a GitHub token in Filters or check the repository name."
         : "";
       setStatus(
         `Loaded ${state.pulls.length} PRs with ${failed.length} repo error(s): ${details}${authGuidance}`,
