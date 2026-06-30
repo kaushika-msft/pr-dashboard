@@ -211,8 +211,10 @@ async function detectViewer(silent) {
     if (!response.ok) {
       if (!silent) {
         setViewerStatus(
-          "Could not auto-detect viewer. Sign in with GitHub CLI or enter your username manually.",
-          "error"
+          usesLocalProxy()
+            ? "Could not auto-detect viewer from the local session. Enter your GitHub username manually."
+            : "Enter your GitHub username to personalize My View.",
+          ""
         );
       }
       return;
@@ -326,7 +328,9 @@ async function refreshAll() {
         .join(" | ");
       const needsAuth = failed.some((error) => shouldPromptForCredentials(error));
       const authGuidance = needsAuth
-        ? " Sign in with GitHub CLI in terminal: gh auth login -w -s repo,read:org, then refresh."
+        ? usesLocalProxy()
+          ? " Sign in with GitHub CLI in terminal: gh auth login -w -s repo,read:org, then refresh."
+          : " Check the repository name, confirm it is public, and try again."
         : "";
       setStatus(
         `Loaded ${state.pulls.length} PRs with ${failed.length} repo error(s): ${details}${authGuidance}`,
@@ -573,7 +577,7 @@ function applyFilters() {
   const cutoff = Date.now() - state.dateWindowDays * 24 * 60 * 60 * 1000;
 
   if (viewFilter !== "all" && !viewer) {
-    setViewerStatus("Enter your GitHub username or click Detect From GitHub to use My View filters.", "error");
+    setViewerStatus("Enter your GitHub username to use My View filters.", "");
   }
 
   state.filteredPulls = state.pulls
