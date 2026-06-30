@@ -76,6 +76,7 @@ const elements = {
   dateRangeValue: document.getElementById("date-range-value"),
   viewerInput: document.getElementById("viewer-input"),
   tokenInput: document.getElementById("token-input"),
+  testTokenBtn: document.getElementById("test-token-btn"),
   viewerStatus: document.getElementById("viewer-status"),
   viewFilter: document.getElementById("view-filter"),
   oauthLoginBtn: document.getElementById("oauth-login-btn"),
@@ -133,6 +134,7 @@ function init() {
 function bindEvents() {
   elements.repoForm.addEventListener("submit", onAddRepo);
   elements.refreshBtn.addEventListener("click", refreshAll);
+  elements.testTokenBtn.addEventListener("click", onTestTokenAccess);
   elements.oauthLoginBtn.addEventListener("click", onOAuthLogin);
   elements.detectViewerBtn.addEventListener("click", () => detectViewer(false));
   elements.viewerInput.addEventListener("change", onViewerChanged);
@@ -164,6 +166,62 @@ function onTokenChanged() {
 
 function onOAuthLogin() {
   window.location.assign("/auth/github/login");
+}
+
+async function onTestTokenAccess() {
+  if (usesLocalProxy()) {
+    setStatus("Local mode uses OAuth/CLI session. Token diagnostics are for hosted mode.", "");
+    return;
+  }
+
+  if (!state.githubToken) {
+    setStatus("Enter a GitHub token first, then click Test Token Access.", "error");
+    return;
+  }
+
+  const reposToCheck = state.repos.length > 0 ? state.repos : [DEFAULT_REPO];
+  const failures = [];
+
+  setStatus("Testing token access for tracked repositories...", "");
+
+  for (const repo of reposToCheck) {
+    const repoResponse = await fetch(`https://api.github.com/repos/${repo}`, {
+      headers: getGitHubHeaders()
+    });
+
+    if (!repoResponse.ok) {
+      const payload = await safeJson(repoResponse);
+      failures.push(`${repo}: repo metadata denied (${repoResponse.status}) - ${payload?.message || "Unknown error"}`);
+      continue;
+    }
+
+    const pullsResponse = await fetch(`https://api.github.com/repos/${repo}/pulls?state=all&per_page=1`, {
+      headers: getGitHubHeaders()
+    });
+
+    if (!pullsResponse.ok) {
+      const payload = await safeJson(pullsResponse);
+      failures.push(`${repo}: pull request read denied (${pullsResponse.status}) - ${payload?.message || "Unknown error"}`);
+    }
+  }
+
+  if (failures.length === 0) {
+    setStatus("Token access check passed for all tracked repositories.", "ok");
+    return;
+  }
+
+  setStatus(
+    `Token access check failed: ${failures.slice(0, 2).join(" | ")} Ensure repo is granted in fine-grained PAT and org SSO is authorized if required.",
+    "error"
+  );
+}
+
+async function safeJson(response) {
+  try {
+    return await response.json();
+  } catch {
+    return null;
+  }
 }
 
 function migrateLegacyNotes() {
