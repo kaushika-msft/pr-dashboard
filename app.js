@@ -78,6 +78,7 @@ const elements = {
   tokenInput: document.getElementById("token-input"),
   viewerStatus: document.getElementById("viewer-status"),
   viewFilter: document.getElementById("view-filter"),
+  oauthLoginBtn: document.getElementById("oauth-login-btn"),
   detectViewerBtn: document.getElementById("detect-viewer-btn"),
   refreshBtn: document.getElementById("refresh-btn"),
   refreshStatus: document.getElementById("refresh-status"),
@@ -105,7 +106,11 @@ function init() {
   elements.dateRange.value = String(state.dateWindowDays);
   elements.dateRangeValue.textContent = formatDateWindowLabel(state.dateWindowDays);
   elements.updateAuthor.value = state.viewerLogin || "";
-  if (!usesLocalProxy()) {
+  if (usesLocalProxy()) {
+    elements.oauthLoginBtn.hidden = false;
+    elements.detectViewerBtn.textContent = "Detect Session User";
+  } else {
+    elements.oauthLoginBtn.hidden = true;
     elements.detectViewerBtn.textContent = "Detect With Token";
     if (!state.viewerLogin) {
       setViewerStatus("Enter your GitHub username, or add a token and click Detect With Token.", "");
@@ -122,6 +127,7 @@ function init() {
 function bindEvents() {
   elements.repoForm.addEventListener("submit", onAddRepo);
   elements.refreshBtn.addEventListener("click", refreshAll);
+  elements.oauthLoginBtn.addEventListener("click", onOAuthLogin);
   elements.detectViewerBtn.addEventListener("click", () => detectViewer(false));
   elements.viewerInput.addEventListener("change", onViewerChanged);
   elements.tokenInput.addEventListener("change", onTokenChanged);
@@ -148,6 +154,10 @@ function onTokenChanged() {
   }
 
   refreshAll();
+}
+
+function onOAuthLogin() {
+  window.location.assign("/auth/github/login");
 }
 
 function migrateLegacyNotes() {
@@ -248,13 +258,24 @@ async function detectViewer(silent) {
       headers: usesLocalProxy() ? {} : getGitHubHeaders()
     });
     if (!response.ok) {
+      let payload = null;
+      try {
+        payload = await response.json();
+      } catch {
+        payload = null;
+      }
+
       if (!silent) {
-        setViewerStatus(
-          usesLocalProxy()
-            ? "Could not auto-detect viewer from the local session. Enter your GitHub username manually."
-            : "Could not detect viewer with this token. Enter your GitHub username manually.",
-          ""
-        );
+        if (usesLocalProxy() && payload?.loginUrl) {
+          setViewerStatus("Sign in with GitHub, then click Detect Session User.", "error");
+        } else {
+          setViewerStatus(
+            usesLocalProxy()
+              ? "Could not auto-detect viewer from the local session. Enter your GitHub username manually."
+              : "Could not detect viewer with this token. Enter your GitHub username manually.",
+            ""
+          );
+        }
       }
       return;
     }
@@ -371,7 +392,7 @@ async function refreshAll() {
       );
       const authGuidance = needsAuth
         ? usesLocalProxy()
-          ? " Sign in with GitHub CLI in terminal: gh auth login -w -s repo,read:org, then refresh."
+          ? " Sign in with GitHub using the Sign In With GitHub button, then refresh."
           : classicPatPolicyError
             ? " This org blocks long-lived classic PATs. Use a fine-grained token, or create a classic PAT with an expiration of 8 days or less, then update the token in Filters."
             : " This repository may be private. Add a GitHub token in Filters or check the repository name."
@@ -408,7 +429,8 @@ async function fetchRepoPulls(repo) {
       ? `${repo}: ${payload.message}`
       : `Failed to load ${repo} (${response.status})`;
 
-    const details = payload?.details ? ` - ${payload.details}` : "";
+    const detailParts = [payload?.details, payload?.hint].filter(Boolean);
+    const details = detailParts.length ? ` - ${detailParts.join(" | ")}` : "";
     const error = new Error(`${message}${details}`);
     error.repo = repo;
     error.status = Number(payload?.status || response.status);

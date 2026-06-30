@@ -4,6 +4,18 @@ param(
 
 $basePath = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 $prefix = "http://localhost:$Port/"
+$baseUrl = "http://localhost:$Port"
+
+$oauthClientId = $env:GITHUB_OAUTH_CLIENT_ID
+$oauthClientSecret = $env:GITHUB_OAUTH_CLIENT_SECRET
+$oauthRedirectUri = if ([string]::IsNullOrWhiteSpace($env:GITHUB_OAUTH_REDIRECT_URI)) {
+  "$baseUrl/auth/github/callback"
+} else {
+  $env:GITHUB_OAUTH_REDIRECT_URI
+}
+
+$sessions = @{}
+$oauthStates = @{}
 
 $listener = [System.Net.HttpListener]::new()
 $listener.Prefixes.Add($prefix)
@@ -11,6 +23,11 @@ $listener.Prefixes.Add($prefix)
 try {
   $listener.Start()
   Write-Host "Serving $basePath at $prefix"
+  if ((-not [string]::IsNullOrWhiteSpace($oauthClientId)) -and (-not [string]::IsNullOrWhiteSpace($oauthClientSecret))) {
+    Write-Host "GitHub OAuth enabled. Redirect URI: $oauthRedirectUri"
+  } else {
+    Write-Host "GitHub OAuth disabled. Set GITHUB_OAUTH_CLIENT_ID and GITHUB_OAUTH_CLIENT_SECRET to enable web login."
+  }
 } catch {
   Write-Error "Unable to start server on port $Port. $_"
   exit 1
@@ -45,6 +62,77 @@ function Write-JsonResponse {
   $Context.Response.OutputStream.Write($bytes, 0, $bytes.Length)
 }
 
+function Write-RedirectResponse {
+  param(
+    [Parameter(Mandatory = $true)]$Context,
+    [Parameter(Mandatory = $true)][string]$Location,
+    [int]$StatusCode = 302
+  )
+
+  $Context.Response.StatusCode = $StatusCode
+  $Context.Response.RedirectLocation = $Location
+}
+
+function Test-OAuthConfigured {
+  return (-not [string]::IsNullOrWhiteSpace($oauthClientId)) -and (-not [string]::IsNullOrWhiteSpace($oauthClientSecret))
+}
+
+function Get-CookieValue {
+  param(
+    [Parameter(Mandatory = $true)]$Request,
+    [Parameter(Mandatory = $true)][string]$Name
+  )
+
+  $cookieHeader = $Request.Headers["Cookie"]
+  if ([string]::IsNullOrWhiteSpace($cookieHeader)) {
+    return $null
+  }
+
+  $parts = $cookieHeader.Split(';')
+  foreach ($part in $parts) {
+    $kv = $part.Trim().Split('=', 2)
+    if ($kv.Length -eq 2 -and $kv[0].Trim() -eq $Name) {
+      return $kv[1].Trim()
+    }
+  }
+
+  return $null
+}
+
+function Get-SessionRecord {
+  param(
+    [Parameter(Mandatory = $true)]$Context
+  )
+
+  $sessionId = Get-CookieValue -Request $Context.Request -Name "prdash_session"
+  if ([string]::IsNullOrWhiteSpace($sessionId)) {
+    return $null
+  }
+
+  if ($sessions.ContainsKey($sessionId)) {
+    return $sessions[$sessionId]
+  }
+
+  return $null
+}
+
+function Set-SessionCookie {
+  param(
+    [Parameter(Mandatory = $true)]$Context,
+    [Parameter(Mandatory = $true)][string]$SessionId
+  )
+
+  $Context.Response.Headers.Add("Set-Cookie", "prdash_session=$SessionId; Path=/; HttpOnly; SameSite=Lax")
+}
+
+function Clear-SessionCookie {
+  param(
+    [Parameter(Mandatory = $true)]$Context
+  )
+
+  $Context.Response.Headers.Add("Set-Cookie", "prdash_session=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0")
+}
+
 function Get-GitHubCliToken {
   $ghPath = $null
 
@@ -76,6 +164,7 @@ function Get-GitHubCliToken {
     return @{
       token = $null
       authState = "gh-not-found"
+      source = "none"
     }
   }
 
@@ -85,6 +174,7 @@ function Get-GitHubCliToken {
       return @{
         token = $null
         authState = "gh-not-authenticated"
+        source = "none"
       }
     }
 
@@ -93,22 +183,174 @@ function Get-GitHubCliToken {
       return @{
         token = $null
         authState = "gh-not-authenticated"
+        source = "none"
       }
     }
 
     return @{
       token = $trimmed
       authState = "authenticated"
+      source = "gh-cli"
     }
   } catch {
     return @{
       token = $null
       authState = "gh-token-error"
+      source = "none"
     }
   }
 }
 
-function Handle-GitHubPullsRequest {
+function Get-RequestAuth {
+  param(
+    [Parameter(Mandatory = $true)]$Context
+  )
+
+  $session = Get-SessionRecord -Context $Context
+  if ($session -and $session.token) {
+    return @{
+      token = $session.token
+      authState = "authenticated"
+      source = "oauth"
+      login = $session.login
+    }
+  }
+
+  return Get-GitHubCliToken
+}
+
+function Invoke-OAuthLoginRequest {
+  param(
+    [Parameter(Mandatory = $true)]$Context
+  )
+
+  if (-not (Test-OAuthConfigured)) {
+    Write-JsonResponse -Context $Context -Payload @{
+      message = "OAuth is not configured on this server."
+      status = 500
+      hint = "Set GITHUB_OAUTH_CLIENT_ID and GITHUB_OAUTH_CLIENT_SECRET, then restart the server."
+    } -StatusCode 500
+    return
+  }
+
+  $state = [guid]::NewGuid().ToString("N")
+  $oauthStates[$state] = (Get-Date)
+
+  $query = @(
+    "client_id=$([uri]::EscapeDataString($oauthClientId))"
+    "redirect_uri=$([uri]::EscapeDataString($oauthRedirectUri))"
+    "scope=$([uri]::EscapeDataString('read:user repo'))"
+    "state=$([uri]::EscapeDataString($state))"
+  ) -join "&"
+
+  $authUrl = "https://github.com/login/oauth/authorize?$query"
+  Write-RedirectResponse -Context $Context -Location $authUrl
+}
+
+function Invoke-OAuthCallbackRequest {
+  param(
+    [Parameter(Mandatory = $true)]$Context
+  )
+
+  if (-not (Test-OAuthConfigured)) {
+    Write-JsonResponse -Context $Context -Payload @{
+      message = "OAuth is not configured on this server."
+      status = 500
+    } -StatusCode 500
+    return
+  }
+
+  $code = $Context.Request.QueryString["code"]
+  $state = $Context.Request.QueryString["state"]
+  $oauthError = $Context.Request.QueryString.Get("error")
+
+  if (-not [string]::IsNullOrWhiteSpace($oauthError)) {
+    Write-RedirectResponse -Context $Context -Location "/index.html?auth=denied"
+    return
+  }
+
+  if ([string]::IsNullOrWhiteSpace($code) -or [string]::IsNullOrWhiteSpace($state) -or -not $oauthStates.ContainsKey($state)) {
+    Write-RedirectResponse -Context $Context -Location "/index.html?auth=failed"
+    return
+  }
+
+  $null = $oauthStates.Remove($state)
+
+  try {
+    $tokenResponse = Invoke-RestMethod -Uri "https://github.com/login/oauth/access_token" -Method Post -Headers @{
+      Accept = "application/json"
+      "User-Agent" = "pr-dashboard-local"
+    } -Body @{
+      client_id = $oauthClientId
+      client_secret = $oauthClientSecret
+      code = $code
+      redirect_uri = $oauthRedirectUri
+      state = $state
+    }
+
+    if (-not $tokenResponse.access_token) {
+      Write-RedirectResponse -Context $Context -Location "/index.html?auth=failed"
+      return
+    }
+
+    $accessToken = "$($tokenResponse.access_token)".Trim()
+    $userResponse = Invoke-RestMethod -Uri "https://api.github.com/user" -Method Get -Headers @{
+      Accept = "application/vnd.github+json"
+      "User-Agent" = "pr-dashboard-local"
+      Authorization = "Bearer $accessToken"
+    }
+
+    $sessionId = [guid]::NewGuid().ToString("N")
+    $sessions[$sessionId] = @{
+      token = $accessToken
+      login = "$($userResponse.login)".Trim().ToLowerInvariant()
+      createdAt = (Get-Date).ToString("o")
+    }
+
+    Set-SessionCookie -Context $Context -SessionId $sessionId
+    Write-RedirectResponse -Context $Context -Location "/index.html?auth=success"
+  } catch {
+    Write-RedirectResponse -Context $Context -Location "/index.html?auth=failed"
+  }
+}
+
+function Invoke-OAuthLogoutRequest {
+  param(
+    [Parameter(Mandatory = $true)]$Context
+  )
+
+  $sessionId = Get-CookieValue -Request $Context.Request -Name "prdash_session"
+  if ($sessionId -and $sessions.ContainsKey($sessionId)) {
+    $null = $sessions.Remove($sessionId)
+  }
+
+  Clear-SessionCookie -Context $Context
+  Write-RedirectResponse -Context $Context -Location "/index.html?auth=logged-out"
+}
+
+function Get-AuthStatusResponse {
+  param(
+    [Parameter(Mandatory = $true)]$Context
+  )
+
+  $session = Get-SessionRecord -Context $Context
+  if ($session -and $session.login) {
+    Write-JsonResponse -Context $Context -Payload @{
+      authenticated = $true
+      source = "oauth"
+      login = $session.login
+    }
+    return
+  }
+
+  Write-JsonResponse -Context $Context -Payload @{
+    authenticated = $false
+    oauthConfigured = (Test-OAuthConfigured)
+    loginUrl = "/auth/github/login"
+  }
+}
+
+function Invoke-GitHubPullsRequest {
   param(
     [Parameter(Mandatory = $true)]$Context,
     [Parameter(Mandatory = $true)][string]$BasePath
@@ -123,7 +365,7 @@ function Handle-GitHubPullsRequest {
     return
   }
 
-  $auth = Get-GitHubCliToken
+  $auth = Get-RequestAuth -Context $Context
   $token = $auth.token
   $headers = @{
     Accept = "application/vnd.github+json"
@@ -163,12 +405,14 @@ function Handle-GitHubPullsRequest {
     }
 
     $hint = if (-not $token) {
-      if ($auth.authState -eq "gh-not-found") {
+      if (Test-OAuthConfigured) {
+        "Sign in with GitHub: /auth/github/login"
+      } elseif ($auth.authState -eq "gh-not-found") {
         "GitHub CLI not found by server process. Restart VS Code/task after installing GitHub CLI."
       } elseif ($auth.authState -eq "gh-not-authenticated") {
         "Sign in with GitHub CLI: gh auth login -w -s repo,read:org"
       } else {
-        "GitHub CLI auth unavailable. Verify: gh auth status -h github.com"
+        "No auth session found. Configure OAuth or GitHub CLI auth."
       }
     } else {
       "Verify repo access in your GitHub account."
@@ -183,19 +427,33 @@ function Handle-GitHubPullsRequest {
   }
 }
 
-function Handle-GitHubViewerRequest {
+function Invoke-GitHubViewerRequest {
   param(
     [Parameter(Mandatory = $true)]$Context
   )
 
-  $auth = Get-GitHubCliToken
+  $auth = Get-RequestAuth -Context $Context
   $token = $auth.token
 
   if (-not $token) {
     Write-JsonResponse -Context $Context -Payload @{
-      message = "GitHub CLI auth unavailable"
+      message = "GitHub auth unavailable"
       status = 401
+      loginUrl = if (Test-OAuthConfigured) { "/auth/github/login" } else { $null }
+      hint = if (Test-OAuthConfigured) {
+        "Sign in with GitHub to start a local session."
+      } else {
+        "Set GITHUB_OAUTH_CLIENT_ID and GITHUB_OAUTH_CLIENT_SECRET, or sign in with GitHub CLI."
+      }
     } -StatusCode 401
+    return
+  }
+
+  if ($auth.source -eq "oauth" -and -not [string]::IsNullOrWhiteSpace($auth.login)) {
+    Write-JsonResponse -Context $Context -Payload @{
+      login = $auth.login
+      source = "oauth"
+    }
     return
   }
 
@@ -224,14 +482,32 @@ function Handle-GitHubViewerRequest {
 while ($listener.IsListening) {
   try {
     $context = $listener.GetContext()
-    if ($context.Request.Url.AbsolutePath -eq "/api/pulls") {
-      Handle-GitHubPullsRequest -Context $context -BasePath $basePath
-      continue
-    }
 
-    if ($context.Request.Url.AbsolutePath -eq "/api/me") {
-      Handle-GitHubViewerRequest -Context $context
-      continue
+    switch ($context.Request.Url.AbsolutePath) {
+      "/api/pulls" {
+        Invoke-GitHubPullsRequest -Context $context -BasePath $basePath
+        continue
+      }
+      "/api/me" {
+        Invoke-GitHubViewerRequest -Context $context
+        continue
+      }
+      "/api/auth/status" {
+        Get-AuthStatusResponse -Context $context
+        continue
+      }
+      "/auth/github/login" {
+        Invoke-OAuthLoginRequest -Context $context
+        continue
+      }
+      "/auth/github/callback" {
+        Invoke-OAuthCallbackRequest -Context $context
+        continue
+      }
+      "/auth/logout" {
+        Invoke-OAuthLogoutRequest -Context $context
+        continue
+      }
     }
 
     $requestPath = $context.Request.Url.AbsolutePath.TrimStart('/')

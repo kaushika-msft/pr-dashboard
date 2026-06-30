@@ -11,7 +11,7 @@ A polished PR analytics dashboard with a friendly kanban board for tracking GitH
 - Lets you assign a PR to someone, post local comments, and update workflow status from the card.
 - Filters by workflow status, label, search text, and user-specific views.
 - Supports quick actions for each PR: Open, Files, Checks, Copy URL.
-- Auto-detects your GitHub username from local GitHub CLI auth, with manual override.
+- Supports local web sign-in with GitHub OAuth for user identity and private repo access.
 - Pins the repo-specific label set in the dashboard so the CPM/SME workflow labels stay visible in filters and summary cards.
 
 ## Run Locally
@@ -21,15 +21,20 @@ This project is intentionally no-build.
 1. Run the VS Code task `Run PR Dashboard`.
 2. The task starts a local static server and opens `http://localhost:5500/index.html`.
 3. For public repositories, no credentials are required.
-4. For private/internal repositories, sign in once via GitHub CLI in terminal:
-   `gh auth login -w -s repo,read:org`
-5. Refresh the dashboard. The local server reuses your GitHub CLI session.
+4. To enable web-based authorization locally, set these environment variables before running the task:
+   - `GITHUB_OAUTH_CLIENT_ID`
+   - `GITHUB_OAUTH_CLIENT_SECRET`
+   - Optional: `GITHUB_OAUTH_REDIRECT_URI` (defaults to `http://localhost:5500/auth/github/callback`)
+5. Click `Sign In With GitHub` in the Filters panel.
+6. After approval, click `Detect Session User` and refresh.
+
+If OAuth variables are not set, the server falls back to GitHub CLI auth.
 
 ## Share With The Team
 
 The app is set up for GitHub Pages deployment through `.github/workflows/deploy.yml`.
 
-Live URL: https://kaushika-msft.github.io/pr-dashboard/
+Live URL: [https://kaushika-msft.github.io/pr-dashboard/](https://kaushika-msft.github.io/pr-dashboard/)
 
 1. Push the repo to GitHub.
 2. Enable GitHub Pages in repository settings using the GitHub Actions source.
