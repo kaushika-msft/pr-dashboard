@@ -108,9 +108,15 @@ function init() {
   elements.updateAuthor.value = state.viewerLogin || "";
   if (usesLocalProxy()) {
     elements.oauthLoginBtn.hidden = false;
+    elements.oauthLoginBtn.disabled = false;
+    elements.oauthLoginBtn.textContent = "Sign In With GitHub";
+    elements.oauthLoginBtn.title = "Start GitHub OAuth login on the local server";
     elements.detectViewerBtn.textContent = "Detect Session User";
   } else {
-    elements.oauthLoginBtn.hidden = true;
+    elements.oauthLoginBtn.hidden = false;
+    elements.oauthLoginBtn.disabled = true;
+    elements.oauthLoginBtn.textContent = "OAuth (Local Server Only)";
+    elements.oauthLoginBtn.title = "GitHub OAuth is available when running the local server";
     elements.detectViewerBtn.textContent = "Detect With Token";
     if (!state.viewerLogin) {
       setViewerStatus("Enter your GitHub username, or add a token and click Detect With Token.", "");
