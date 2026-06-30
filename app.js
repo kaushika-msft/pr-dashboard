@@ -400,13 +400,13 @@ async function fetchRepoPulls(repo) {
     }
 
     const message = payload?.message
-      ? `${payload.message}`
+      ? `${repo}: ${payload.message}`
       : `Failed to load ${repo} (${response.status})`;
 
     const details = payload?.details ? ` - ${payload.details}` : "";
     const error = new Error(`${message}${details}`);
     error.repo = repo;
-    error.status = payload?.status || response.status;
+    error.status = Number(payload?.status || response.status);
     error.details = payload?.details || "";
     throw error;
   }
