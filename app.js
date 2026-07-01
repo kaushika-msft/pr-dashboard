@@ -11,7 +11,12 @@ const STORAGE_KEYS = {
 const DEFAULT_REPO = "microsoft/vscode";
 
 const TRACKED_LABELS = [
-  { name: "#sign-off comment", bucket: "attention", description: "Comment added when a PR is ready for review." },
+  {
+    name: "#sign-off comment",
+    aliases: ["#sign-off"],
+    bucket: "attention",
+    description: "Comment added when a PR is ready for review."
+  },
   { name: "Out-of-band", bucket: "blocked", description: "Request to schedule the PR for a specific publishing time." },
   { name: "In CPM Triage", bucket: "attention", description: "The PR is in review by the CPM." },
   { name: "cpm/approved", bucket: "done", description: "The PR is approved by the CPM." },
@@ -30,7 +35,17 @@ const TRACKED_LABELS = [
 ];
 
 const TRACKED_LABEL_ORDER = TRACKED_LABELS.map((label) => label.name);
-const TRACKED_LABEL_LOOKUP = Object.fromEntries(TRACKED_LABELS.map((label) => [label.name.toLowerCase(), label]));
+const TRACKED_LABEL_LOOKUP = (() => {
+  const lookup = {};
+
+  TRACKED_LABELS.forEach((label) => {
+    [label.name, ...(label.aliases || [])].forEach((key) => {
+      lookup[String(key).trim().toLowerCase()] = label;
+    });
+  });
+
+  return lookup;
+})();
 
 const STATUS_DEFS = [
   { key: "on-track", label: "On Track", tone: "on-track", description: "Moving as planned" },
@@ -785,7 +800,7 @@ function renderAnalytics() {
 }
 
 function renderTrackedLabelCards() {
-  const labelCounts = getTrackedLabelCounts(state.pulls);
+  const labelCounts = getTrackedLabelCounts(state.filteredPulls);
 
   return TRACKED_LABELS.map((label) => {
     const count = labelCounts[label.name] || 0;
@@ -1186,8 +1201,9 @@ function getTrackedLabelCounts(pulls) {
 
   pulls.forEach((pr) => {
     pr.labels.forEach((label) => {
-      if (Object.prototype.hasOwnProperty.call(counts, label.name)) {
-        counts[label.name] += 1;
+      const tracked = TRACKED_LABEL_LOOKUP[String(label.name || "").trim().toLowerCase()];
+      if (tracked) {
+        counts[tracked.name] += 1;
       }
     });
   });
