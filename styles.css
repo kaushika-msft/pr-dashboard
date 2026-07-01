@@ -449,6 +449,9 @@ button:disabled {
 }
 
 .tracked-label-card {
+  appearance: none;
+  width: 100%;
+  text-align: left;
   border-radius: 18px;
   border: 1px solid var(--line);
   background: rgba(255, 255, 255, 0.95);
@@ -456,6 +459,24 @@ button:disabled {
   box-shadow: var(--shadow-soft);
   display: grid;
   gap: 7px;
+  cursor: pointer;
+  transition: transform 140ms ease, box-shadow 140ms ease, border-color 140ms ease;
+}
+
+.tracked-label-card:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 18px 28px rgba(9, 24, 43, 0.12);
+}
+
+.tracked-label-card:focus-visible {
+  outline: 0;
+  border-color: rgba(23, 105, 255, 0.6);
+  box-shadow: 0 0 0 4px rgba(23, 105, 255, 0.14);
+}
+
+.tracked-label-card-active {
+  border-color: rgba(23, 105, 255, 0.5);
+  box-shadow: 0 0 0 3px rgba(23, 105, 255, 0.12), var(--shadow-soft);
 }
 
 .tracked-label-card p,

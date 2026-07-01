@@ -72,6 +72,7 @@ const state = {
   dateWindowDays: clampDateWindow(Number(localStorage.getItem(STORAGE_KEYS.dateWindowDays) || 1)),
   boardState: loadJson(STORAGE_KEYS.boardState, {}),
   teamUpdates: loadJson(STORAGE_KEYS.teamUpdates, []),
+  trackedLabelFilter: "",
   pulls: [],
   filteredPulls: [],
   refreshErrors: [],
@@ -103,6 +104,7 @@ const elements = {
   labelFocusGrid: document.getElementById("label-focus-grid"),
   statusChart: document.getElementById("status-chart"),
   boardColumns: document.getElementById("board-columns"),
+  boardFilterStatus: document.getElementById("board-filter-status"),
   resultCount: document.getElementById("result-count"),
   updateForm: document.getElementById("update-form"),
   updateAuthor: document.getElementById("update-author"),
@@ -161,6 +163,8 @@ function bindEvents() {
     control.addEventListener("input", applyFilters);
     control.addEventListener("change", applyFilters);
   });
+
+  elements.labelFocusGrid.addEventListener("click", onTrackedLabelCardClick);
 }
 
 function onTokenChanged() {
@@ -719,6 +723,7 @@ function applyFilters() {
   const label = elements.labelFilter.value;
   const search = elements.searchFilter.value.trim().toLowerCase();
   const viewFilter = elements.viewFilter.value;
+  const trackedLabel = state.trackedLabelFilter;
   const viewer = state.viewerLogin.trim().toLowerCase();
   const cutoff = Date.now() - state.dateWindowDays * 24 * 60 * 60 * 1000;
 
@@ -740,6 +745,10 @@ function applyFilters() {
       }
 
       if (label !== "all" && !pr.labels.some((l) => l.name === label)) {
+        return false;
+      }
+
+      if (trackedLabel && !pr.labels.some((entry) => isTrackedLabelMatch(entry.name, trackedLabel))) {
         return false;
       }
 
@@ -804,12 +813,19 @@ function renderTrackedLabelCards() {
 
   return TRACKED_LABELS.map((label) => {
     const count = labelCounts[label.name] || 0;
+    const isActive = state.trackedLabelFilter === label.name;
     return `
-      <article class="tracked-label-card tracked-${label.bucket}">
+      <button
+        type="button"
+        class="tracked-label-card tracked-${label.bucket}${isActive ? " tracked-label-card-active" : ""}"
+        data-tracked-label="${escapeHtml(label.name)}"
+        aria-pressed="${isActive ? "true" : "false"}"
+        title="${escapeHtml(isActive ? `Clear ${label.name} filter` : `Show PRs tagged ${label.name}`)}"
+      >
         <p>${escapeHtml(label.name)}</p>
         <strong>${count}</strong>
         <span>${escapeHtml(label.description)}</span>
-      </article>
+      </button>
     `;
   }).join("");
 }
@@ -872,6 +888,8 @@ function renderStatusChart(counts) {
 }
 
 function renderBoard() {
+  updateBoardFilterStatus();
+
   if (state.filteredPulls.length === 0) {
     elements.boardColumns.innerHTML = `<p class="empty-state">No pull requests match the current filters. Try changing the status, label, or search criteria.</p>`;
     return;
@@ -1211,9 +1229,35 @@ function getTrackedLabelCounts(pulls) {
   return counts;
 }
 
+function isTrackedLabelMatch(labelName, trackedLabelName) {
+  const tracked = TRACKED_LABEL_LOOKUP[String(labelName || "").trim().toLowerCase()];
+  return Boolean(tracked && tracked.name === trackedLabelName);
+}
+
 function matchesTrackedLabel(labelName, bucket) {
   const tracked = TRACKED_LABEL_LOOKUP[String(labelName || "").trim().toLowerCase()];
   return Boolean(tracked && tracked.bucket === bucket);
+}
+
+function onTrackedLabelCardClick(event) {
+  const button = event.target.closest("[data-tracked-label]");
+  if (!button) {
+    return;
+  }
+
+  const trackedLabel = button.dataset.trackedLabel || "";
+  state.trackedLabelFilter = state.trackedLabelFilter === trackedLabel ? "" : trackedLabel;
+  applyFilters();
+  elements.boardColumns.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+function updateBoardFilterStatus() {
+  if (!state.trackedLabelFilter) {
+    elements.boardFilterStatus.textContent = "";
+    return;
+  }
+
+  elements.boardFilterStatus.textContent = `Filtered to ${state.trackedLabelFilter}. Click the card again to clear.`;
 }
 
 function updateDndTargets() {
