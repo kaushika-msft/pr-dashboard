@@ -452,6 +452,7 @@ button:disabled {
   appearance: none;
   width: 100%;
   text-align: left;
+  color: var(--ink);
   border-radius: 18px;
   border: 1px solid var(--line);
   background: rgba(255, 255, 255, 0.95);
@@ -493,6 +494,7 @@ button:disabled {
 }
 
 .tracked-label-card strong {
+  color: var(--ink);
   font-size: 1.85rem;
   letter-spacing: -0.05em;
 }
